@@ -18,6 +18,7 @@ class LeakyIAF(BaseAxonHillockModel):
     
     def step():
         for i in range(n_steps):
+            random = randint(1, 10)
             V = V + I * dt 
             if V > threshold:
                 V = reset_potential
