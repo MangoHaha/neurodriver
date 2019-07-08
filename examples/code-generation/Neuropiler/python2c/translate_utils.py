@@ -23,7 +23,7 @@ class SupportedFunctions:
         template_blocks = [blocks.StringBlock()]
         template_blocks.append(blocks.StringBlock("curandState state;"))
         template_blocks.append(blocks.StringBlock("curand_init(seed, tid, 0, &state);"))
-        template_blocks.append(blocks.StringBlock("return min + curand_uniform(&state)*(max - min);"))
+        template_blocks.append(blocks.StringBlock("return {min} + curand_uniform(&state)*({max} - {min});".format(max=max, min=min)))
         main_block = blocks.FunctionBlock(
             "__device__ float", "random", arg_blocks, sticky_front=template_blocks, function_ind=12, description="Random Generator Implementation"
         )
