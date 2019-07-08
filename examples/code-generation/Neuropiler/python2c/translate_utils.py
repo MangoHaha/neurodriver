@@ -5,6 +5,7 @@ from . import blocks
 class SupportedFunctions:
 
     functions = {}
+    random_seed=1234
     def __init__(self):
         self.functions = {
         "randint": self.random_function,

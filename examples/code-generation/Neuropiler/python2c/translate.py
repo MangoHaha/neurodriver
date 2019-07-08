@@ -240,7 +240,7 @@ def handle_op_node(node):
         return get_op(node.op, node.operand)
     elif isinstance(node, ast.Call):
         if(node.func.id == "randint") :
-            arguments = "(tid, 10)"
+            arguments = "(tid, random_seed)"
             return "random" + arguments
         arguments = '(' + ','.join([str(handle_op_node(i)) for i in node.args]) + ')'
         return node.func.id +'%(fletter)s'+ arguments
@@ -442,8 +442,10 @@ def translate(file_, indent_size=4, main_func = None):
         evaluate_node(node, main_func.last)
         for block in node.body:
             if isinstance(block, ast.Assign) and isinstance(block.value, ast.Call):
-                    random_func = supportedFunc.functions[block.targets[0].id](str(block.value.args[0].n), str(block.value.args[1].n))
-                    top.append_block(random_func)
+                    replace_func = supportedFunc.functions[block.targets[0].id](str(block.value.args[0].n), str(block.value.args[1].n))
+                    if replace_func.name == 'random':
+                        main_func.sticky_front.append(blocks.StringBlock("unsigned long random_seed = {random_seed};".format(random_seed=supportedFunc.random_seed)))
+                    top.append_block(replace_func)
 
     return str(top)
 
