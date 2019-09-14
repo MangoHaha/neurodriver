@@ -6,6 +6,7 @@ import re
 import ast
 
 from . import blocks
+from .translate_utils import *
 
 from .block_utils import *
 from collections import OrderedDict
@@ -43,7 +44,7 @@ def prettyparseprint(code, spaces=4):
     print(text)
 
 
-def includes_from_code(code):
+def includes_from_code(code, function_ind = 12, should_indent = True):
     """
     Return a list of #includes that are necessary to run the
     C code.
@@ -52,11 +53,12 @@ def includes_from_code(code):
     # if any("print" in line for line in code):
     #     includes.append(blocks.StringBlock("#include <stdio.h>"))
     #     includes.append(blocks.StringBlock('#include "c_utils/utils.h"'))
-    includes.append(blocks.StringBlock('#define EXP exp%(fletter)s'))
-    includes.append(blocks.StringBlock('#define POW pow%(fletter)s'))
-    includes.append(blocks.StringBlock('#define ABS fabs%(fletter)s'))
+    func_indentation = " "*function_ind if should_indent else ""
+    includes.append(blocks.StringBlock(func_indentation + '#define EXP exp%(fletter)s'))
+    includes.append(blocks.StringBlock(func_indentation + '#define POW pow%(fletter)s'))
+    includes.append(blocks.StringBlock(func_indentation + '#define ABS fabs%(fletter)s'))
     # Add a blank line for no reason
-    includes.append(blocks.StringBlock())
+    # includes.append(blocks.StringBlock())
     return includes
 
 
@@ -64,7 +66,8 @@ def main_function(updates = ['spike_state', 'V'],
                   accesses = ['I'],
                   params = ['resting_potential', 'threshold', 'reset_potential', 'capacitance', 'resistance'],
                   internals = OrderedDict([('internalV',0.0)]),
-                  localvars = []):
+                  localvars = [],
+                  function_ind = 12):
     """
     Return a standard main function block for given Neurodriver variables.
     """
@@ -74,46 +77,53 @@ def main_function(updates = ['spike_state', 'V'],
             blocks.ExprBlock("int", "n_steps", is_arg=True)]
     
 
-    template_blocks = [blocks.StringBlock("int tid = threadIdx.x + blockIdx.x * blockDim.x;"),
+    front_blocks = [blocks.StringBlock("int tid = threadIdx.x + blockIdx.x * blockDim.x;"),
                        blocks.StringBlock("int total_threads = gridDim.x * blockDim.x;"),
-                       blocks.StringBlock("%(dt)s ddt = dt*1000.; // s to ms"),]
+                       blocks.StringBlock("%(dt)s ddt = dt*1000.; // s to ms")]
 
     end_blocks = [blocks.StringBlock()]
 
     for i in accesses:
-        arg_blocks.append(blocks.ExprBlock("\n%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
-        template_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
+        arg_blocks.append(blocks.ExprBlock("%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
+        front_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
     for i in params:
-        arg_blocks.append(blocks.ExprBlock("\n%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
-        template_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
+        arg_blocks.append(blocks.ExprBlock("%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
+        front_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
     for i in internals:
-        arg_blocks.append(blocks.ExprBlock("\n%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
-        template_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
+        arg_blocks.append(blocks.ExprBlock("%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
+        front_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
     for i in updates:
-        arg_blocks.append(blocks.ExprBlock("\n%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
-        template_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
+        arg_blocks.append(blocks.ExprBlock("%(" + i + ")s", "g_" + i, pointer_depth=1, is_arg=True))
+        front_blocks.append(blocks.StringBlock("%(" + i + ")s " + i + ";"))
     for i in localvars:
-        template_blocks.append(blocks.StringBlock("%(" + "dt" + ")s " + i + ";"))
+        front_blocks.append(blocks.StringBlock("%(" + "dt" + ")s " + i + ";"))
 
-    template_blocks.append(blocks.StringBlock("for(int i_comp = tid; i_comp < num_comps; i_comp += total_threads) {"))
+    range_comp_var_block=[]
     if 'spike_state' in updates:
-        template_blocks.append(blocks.StringBlock("spike = 0;"))
-    for i in accesses:
-        template_blocks.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
+        range_comp_var_block.append(blocks.StringBlock("spike = 0;"))
+    # for i in accesses:
+        range_comp_var_block.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
     for i in params:
-        template_blocks.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
+        range_comp_var_block.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
         end_blocks.append(blocks.StringBlock("g_" + i + "[i_comp] = " + i + ";"))
     for i in internals:
-        template_blocks.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
+        range_comp_var_block.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
         end_blocks.append(blocks.StringBlock("g_" + i + "[i_comp] = " + i + ";"))
     for i in updates:
-        template_blocks.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
+        range_comp_var_block.append(blocks.StringBlock(i + " = g_" + i + "[i_comp];"))
         end_blocks.append(blocks.StringBlock("g_" + i + "[i_comp] = " + i + ";"))
+
+    range_comp_block = blocks.ForBlock(
+        "i_comp", "num_comps", step="total_threads",
+        before=[], after=[],
+        sticky_front=range_comp_var_block,  variables=[])
+
+    # range_comp_block.append_block()
 
     end_blocks.append(blocks.StringBlock("}"))
 
     main_block = blocks.FunctionBlock(
-        "__global__ void", "update", arg_blocks, sticky_front=template_blocks,sticky_end=end_blocks
+        "__global__ void", "update", arg_blocks, contents=[range_comp_block], sticky_front=front_blocks, sticky_end=end_blocks, function_ind=function_ind
     )
     return main_block
 
@@ -229,6 +239,9 @@ def handle_op_node(node):
     if isinstance(node, ast.UnaryOp):
         return get_op(node.op, node.operand)
     elif isinstance(node, ast.Call):
+        if(node.func.id == "randint") :
+            arguments = "(tid, random_seed)"
+            return "random" + arguments
         arguments = '(' + ','.join([str(handle_op_node(i)) for i in node.args]) + ')'
         return node.func.id +'%(fletter)s'+ arguments
     elif isinstance(node, ast.Compare):
@@ -325,7 +338,7 @@ def evaluate_node(node, parent):
             parent.append_block(range_block)
 
             # Add the contents of the body of the for loop.
-            # Filter for unecessary lines first.
+            # Filter for unnecessary lines first.
             for_body = filter_body_nodes(node.body)
             for f_node in for_body:
                 evaluate_node(f_node, range_block)
@@ -379,6 +392,11 @@ def evaluate_node(node, parent):
                 parent.append_block(num_obj)
         # elif isinstance(value, ast.UnaryOp):
         #     print(value.n,'is unary')
+        # elif isinstance(value, ast.Call):
+        #     if value.func.id == 'randint':
+        #         supportedFunc = SupportedFunctions()
+        #         random_func = supportedFunc.functions["random"](1, 10)
+        #         parent.append_block(r)
         else:
             print("Is BinOp?", isinstance(value, ast.BinOp))
             print(handle_op_node(value))
@@ -401,25 +419,33 @@ def translate(file_, indent_size=4, main_func = None):
         text = f.read()
         text = text.replace("dt","ddt")
         nodes = ast.parse(text).body
-        code = text.splitlines()
+        # code = text.splitlines()
     blocks.Block.indent = indent_size
     top = blocks.Block(should_indent=False)
 
     # Run filtering process
-    code = filter(should_keep_line, code)
+    # code = filter(should_keep_line, code)
 
     # Include includes
-    top.append_blocks(includes_from_code(code))
+    top.append_blocks(includes_from_code("null"))
 
     # Add main function
     if main_func is None:
         main_func = main_function()
 
+    supportedFunc = SupportedFunctions()
+
     top.append_block(main_func)
 
     nodes = filter_body_nodes(nodes)
     for node in nodes:
-        evaluate_node(node, main_func)
+        evaluate_node(node, main_func.last)
+        for block in node.body:
+            if isinstance(block, ast.Assign) and isinstance(block.value, ast.Call):
+                    replace_func = supportedFunc.functions[block.targets[0].id](block.value.args[0].n, block.value.args[1].n)
+                    if replace_func.name == 'random':
+                        main_func.sticky_front.append(blocks.StringBlock("unsigned long random_seed = {random_seed};".format(random_seed=supportedFunc.random_seed)))
+                    top.append_block(replace_func)
 
     return str(top)
 

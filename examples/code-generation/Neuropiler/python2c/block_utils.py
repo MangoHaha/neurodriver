@@ -13,3 +13,4 @@ def is_literal(node):
     Check if a node represents a python literal.
     """
     return any(map(lambda x: isinstance(node, x), LITERAL_NODES))
+

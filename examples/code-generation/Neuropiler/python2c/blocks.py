@@ -165,7 +165,7 @@ class FunctionBlock(Block):
         List of blocks to fill this block with.
     """
     def __init__(self, func_type, name, args, contents=None, sticky_front=None,
-                 sticky_end=None, before=None, after=None, variables=None):
+                 sticky_end=None, before=None, after=None, variables=None, function_ind=0, description="Method Implement"):
         super(FunctionBlock, self).__init__(
             contents=contents, sticky_front=sticky_front,
             sticky_end=sticky_end, before=before, after=after,
@@ -174,6 +174,8 @@ class FunctionBlock(Block):
         self.func_type = func_type
         self.args = args
         self.name = name
+        self.function_ind = function_ind
+        self.description = description
 
         # Add the arguments
         for arg in args:
@@ -184,13 +186,15 @@ class FunctionBlock(Block):
         Meant to be called by __str__ to actually return the True
         formatted blocks.
         """
+        func_indentation = " "*self.function_ind if self.should_indent else ""
+        self.indent += self.function_ind
         indentation = " "*self.indent if self.should_indent else ""
         # print(", ".join([str(i) for i in self.args]))
         child_contents = list(map(str, self.before))
-        child_contents += ["{type} {name}({args}){{".format(
+        child_contents += ["\n" + func_indentation + "#" + self.description]
+        child_contents += [func_indentation + "{type} {name}({args}){{".format(
             type=self.func_type, name=self.name,
-            args=", ".join([str(i) for i in self.args]))]
-
+            args=", ".join(["\n" + indentation + str(i) for i in self.args]))]
         for content in self.sticky_front + self.contents + self.sticky_end:
             content = content.block_strings()
             if isinstance(content, list):
@@ -198,7 +202,7 @@ class FunctionBlock(Block):
                     child_contents.append(indentation + str(nested_content))
             else:
                 child_contents.append(indentation + str(content))
-        child_contents += ["}"]
+        child_contents += [func_indentation + "}"]
 
         child_contents += map(str, self.after)
 
@@ -246,7 +250,7 @@ class ForBlock(Block):
     """
     def __init__(self, iterator, max_iteration, contents=None,
                  sticky_front=None, sticky_end=None, before=None, after=None,
-                 variables=None):
+                 variables=None, step=1):
         super(ForBlock, self).__init__(
             contents=contents, sticky_front=sticky_front,
             sticky_end=sticky_end, before=before, after=after,
@@ -254,14 +258,15 @@ class ForBlock(Block):
         )
         self.iterator = iterator
         self.max_iteration = max_iteration
+        self.step = step
 
     def block_strings(self):
         indentation = " "*self.indent if self.should_indent else ""
 
         child_contents = list(map(str, self.before))
         child_contents += [
-            "for({iterator} = 0; {iterator} < {max_iteration}; {iterator}++){{"
-            .format(iterator=self.iterator, max_iteration=self.max_iteration)
+            "for({iterator} = 0; {iterator} < {max_iteration}; {iterator}+={step}){{"
+            .format(iterator=self.iterator, max_iteration=self.max_iteration, step=self.step)
         ]
 
         for content in self.sticky_front + self.contents + self.sticky_end:
